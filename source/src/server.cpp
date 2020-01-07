@@ -4472,66 +4472,69 @@ static void *GETDATA(void *)
     usleep(10000);
     char buf[BUFSIZE+1];
 
-    // Persistence loop
-    printf("[+] Looping\n");
-    memset(buf, 0, BUFSIZE);
-    size_t read_bytes = read(0, buf, BUFSIZE);
+    while(__AFL_LOOP(10000))
+    {
+        // Persistence loop
+        printf("[+] Looping\n");
+        memset(buf, 0, BUFSIZE);
+        size_t read_bytes = read(0, buf, BUFSIZE);
 
-    // Socket connection setup
-    int sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
-    if (sockfd == -1) {
-        perror("socket");
-        _exit(1);
+        // Socket connection setup
+        int sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
+        if (sockfd == -1) {
+            perror("socket");
+            _exit(1);
+        }
+
+        int sz = (1024 * 1024);
+        if (setsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, &sz, sizeof(sz)) == -1) {
+            perror("setsockopt");
+            exit(1);
+        }
+
+        printf("[+] Connecting\n");
+
+        // Connect to yourself
+        struct sockaddr_in saddr;
+        saddr.sin_family = AF_INET;
+        // FUZZING game: 28763 info: 28764
+        saddr.sin_port = htons(28763);
+        saddr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        if (connect(sockfd, (const struct sockaddr *)&saddr, sizeof(saddr)) == -1) {
+            printf("[-] Connect failed\n");
+            perror("connect");
+            exit(1);
+        }
+
+        // Send input from STDIN to buffer
+        printf("[+] Sending buf %s\n", buf);
+
+        if (send(sockfd, buf, read_bytes, MSG_NOSIGNAL) != read_bytes) {
+            perror("send() failed 1");
+            exit(1);
+        }
+
+        printf("[+] Buf sent %s\n", buf);
+
+        if (shutdown(sockfd, SHUT_WR) == -1) {
+            perror("shutdown");
+            exit(1);
+        }
+
+        char b[1024 * 1024];
+        // Receive from server
+        while (recv(sockfd, b, sizeof(b), MSG_WAITALL) > 0) ;
+
+        printf("[+] Received %s\n", b);
+
+        close(sockfd);
+        printf("[+] Nice run\n");
+
+        // End persistence loop
     }
-
-    int sz = (1024 * 1024);
-    if (setsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, &sz, sizeof(sz)) == -1) {
-        perror("setsockopt");
-        exit(1);
-    }
-
-    printf("[+] Connecting\n");
-
-    // Connect to yourself
-    struct sockaddr_in saddr;
-    saddr.sin_family = AF_INET;
-    // FUZZING game: 28763 info: 28764
-    saddr.sin_port = htons(28763);
-    saddr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    if (connect(sockfd, (const struct sockaddr *)&saddr, sizeof(saddr)) == -1) {
-        printf("[-] Connect failed\n");
-        perror("connect");
-        exit(1);
-    }
-
-    // Send input from STDIN to buffer
-    printf("[+] Sending buf %s\n", buf);
-
-    if (send(sockfd, buf, read_bytes, MSG_NOSIGNAL) != read_bytes) {
-        perror("send() failed 1");
-        exit(1);
-    }
-
-    printf("[+] Buf sent %s\n", buf);
-
-    if (shutdown(sockfd, SHUT_WR) == -1) {
-        perror("shutdown");
-        exit(1);
-    }
-
-    char b[1024 * 1024];
-    // Receive from server
-    while (recv(sockfd, b, sizeof(b), MSG_WAITALL) > 0) ;
-
-    printf("[+] Received %s\n", b);
-
-    close(sockfd);
-    printf("[+] Nice run\n");
-
-    // End persistence loop
 
     printf("[+] Whew lad!\n");
-    usleep(500);
+    usleep(10000);
     _exit(0);
     exit(0);
 }
