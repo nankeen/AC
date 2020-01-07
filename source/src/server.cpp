@@ -4531,7 +4531,7 @@ static void *GETDATA(void *)
     // End persistence loop
 
     printf("[+] Whew lad!\n");
-    usleep(100000);
+    usleep(500);
     _exit(0);
     exit(0);
 }
