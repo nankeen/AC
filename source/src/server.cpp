@@ -4490,7 +4490,7 @@ static void *GETDATA(void *)
         exit(1);
     }
 
-    printf("[+] Connecting\n", buf);
+    printf("[+] Connecting\n");
 
     // Connect to yourself
     struct sockaddr_in saddr;
@@ -4498,10 +4498,10 @@ static void *GETDATA(void *)
     // FUZZING game: 28763 info: 28764
     saddr.sin_port = htons(28763);
     saddr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    if (connect(sockfd, &saddr, sizeof(saddr)) == -1) {
+    if (connect(sockfd, (const struct sockaddr *)&saddr, sizeof(saddr)) == -1) {
         printf("[-] Connect failed\n");
         perror("connect");
-        continue;
+        exit(1);
     }
 
     // Send input from STDIN to buffer
@@ -4512,7 +4512,7 @@ static void *GETDATA(void *)
         exit(1);
     }
 
-    printf("[+] Buf sent %s\n", &buf);
+    printf("[+] Buf sent %s\n", buf);
 
     if (shutdown(sockfd, SHUT_WR) == -1) {
         perror("shutdown");
