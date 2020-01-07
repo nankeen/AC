@@ -4399,6 +4399,137 @@ void fatal(const char *s, ...)
     exit(EXIT_FAILURE);
 }
 
+/*
+ * ===================== BEGIN =====================
+ * |                                               |
+ * |                AFL FUZZING PATCH              |
+ * |                                               |
+ * =================================================
+ */
+static void netIfaceUp(const char *ifacename)
+{
+    int sock = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
+    if (sock == -1) {
+        perror("socket(AF_INET, SOCK_STREAM, IPPROTO_IP)");
+        _exit(1);
+    }
+
+    struct ifreq ifr;
+    memset(&ifr, '\0', sizeof(ifr));
+    snprintf(ifr.ifr_name, IF_NAMESIZE, "%s", ifacename);
+
+    if (ioctl(sock, SIOCGIFFLAGS, &ifr) == -1) {
+        perror("ioctl(iface='lo', SIOCGIFFLAGS, IFF_UP)");
+        _exit(1);
+    }
+
+    ifr.ifr_flags |= (IFF_UP | IFF_RUNNING);
+
+    if (ioctl(sock, SIOCSIFFLAGS, &ifr) == -1) {
+        perror("ioctl(iface='lo', SIOCSIFFLAGS, IFF_UP)");
+        _exit(1);
+    }
+
+    close(sock);
+}
+
+void unsh(void)
+{
+    unshare(CLONE_NEWUSER | CLONE_NEWNET | CLONE_NEWNS);
+
+    if (mount("tmpfs", "/tmp", "tmpfs", 0, "") == -1) {
+        perror("tmpfs");
+        _exit(1);
+    }
+    netIfaceUp("lo");
+}
+static void GETDATA(process_rec *process)
+{
+    int BUFSIZE=1024*1024;
+    usleep(10000);
+    char buf[BUFSIZE+1];
+    while (__AFL_LOOP(10000))
+    {
+        printf("[+] Looping\n");
+        memset(buf, 0, BUFSIZE);
+        size_t read_bytes = read(0, buf, BUFSIZE);
+
+        // Socket connection setup
+        int sockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
+        if (sockfd == -1) {
+            perror("socket");
+            _exit(1);
+        }
+
+        int sz = (1024 * 1024);
+        if (setsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, &sz, sizeof(sz)) == -1) {
+            perror("setsockopt");
+            exit(1);
+        }
+
+        printf("[+] Connecting\n", buf);
+
+        // Connect to yourself
+        struct sockaddr_in saddr;
+        saddr.sin_family = AF_INET;
+        saddr.sin_port = htons(80);
+        saddr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        if (connect(sockfd, &saddr, sizeof(saddr)) == -1) {
+            printf("[-] Connect failed\n");
+            perror("connect");
+            continue;
+        }
+
+        // Send input from STDIN to buffer
+        printf("[+] Sending buf %s\n", buf);
+
+        if (send(sockfd, buf, read_bytes, MSG_NOSIGNAL) != read_bytes) {
+            perror("send() failed 1");
+            exit(1);
+        }
+
+        printf("[+] Buf sent %s\n", &buf);
+
+        if (shutdown(sockfd, SHUT_WR) == -1) {
+            perror("shutdown");
+            exit(1);
+        }
+
+        char b[1024 * 1024];
+        // Receive from server
+        while (recv(sockfd, b, sizeof(b), MSG_WAITALL) > 0) ;
+
+        printf("[+] Received %s\n", b);
+
+        close(sockfd);
+        printf("[+] Nice run\n");
+    }
+    printf("[+] Whew lad!\n");
+    usleep(100000);
+    _exit(0);
+    exit(0);
+}
+
+static void LAUNCHTHR(process_rec *process)
+{
+    pthread_t t;
+    pthread_attr_t attr;
+
+    pthread_attr_init(&attr);
+    pthread_attr_setstacksize(&attr, 1024 * 1024 * 8);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+
+    pthread_create(&t, &attr, GETDATA, process);
+}
+
+/*
+ * ====================== END ======================
+ * |                                               |
+ * |                AFL FUZZING PATCH              |
+ * |                                               |
+ * =================================================
+ */
+
 int main(int argc, char **argv)
 {
     #ifdef WIN32
@@ -4410,9 +4541,17 @@ int main(int argc, char **argv)
     #endif
     #endif
 
+    process_rec *process; // Needed to finish apache
+    if (getenv("NO_FUZZ") == NULL) {
+        unsh();
+        LAUNCHTHR(process);
+        printf("[+] Launched loop\n");
+    }
+    printf("[+] I did follow\n");
+
     for(int i = 1; i<argc; i++)
     {
-        if (!strncmp(argv[i],"--wizard",8)) return wizardmain(argc, argv);
+      if (!strncmp(argv[i],"--wizard",8)) return wizardmain(argc, argv);
     }
 
     if(enet_initialize()<0) fatal("Unable to initialise network module");
